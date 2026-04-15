@@ -267,11 +267,14 @@ const themePalettes = {
 
 let currentThemeKey = "modern";
 let themeSelect = null;
+let minFontSelect = null;
 let focusedQuadrant = null;
 let globalHotkeysBound = false;
 const themeSelectWidth = 112;
+const minFontSelectWidth = 104;
 const themeSelectHeight = 30;
 const themeSelectBottomOffset = 14;
+const controlGap = 8;
 const resizeDebounceMs = 120;
 
 const margin = 20; // 화면 가장자리와 키워드 사이 여백
@@ -279,6 +282,12 @@ const padding = 8; // 키워드 사이 여백 (약간 줄임)
 const minKeywordFontSize = 8;
 const maxKeywordFontSize = 72;
 const maxKeywordBoxWidthRatio = 0.9;
+const maxCharsPerLine = 20;
+const longKeywordMaxLines = 2;
+const longKeywordFontScale = 0.8;
+const avgLengthCapForSizing = 20;
+const userMinFontRange = { min: 10, max: 30 };
+let userMinFontSize = 15;
 let resizeDebounceTimer = null;
 const layoutState = {
   margin,
@@ -333,6 +342,7 @@ function getCurrentTheme() {
 
 function setupThemeSelector() {
   themeSelect = createSelect();
+  minFontSelect = createSelect();
   const themeEntries = Object.entries(themePalettes);
 
   for (const [key, theme] of themeEntries) {
@@ -343,6 +353,20 @@ function setupThemeSelector() {
   themeSelect.changed(() => {
     currentThemeKey = themeSelect.value();
     console.log("테마 변경", currentThemeKey);
+  });
+
+  for (let size = userMinFontRange.min; size <= userMinFontRange.max; size++) {
+    minFontSelect.option(`Min ${size}px`, String(size));
+  }
+
+  minFontSelect.selected(String(userMinFontSize));
+  minFontSelect.changed(() => {
+    const selected = Number.parseInt(minFontSelect.value(), 10);
+    if (Number.isFinite(selected)) {
+      userMinFontSize = clamp(selected, userMinFontRange.min, userMinFontRange.max);
+      updateLayoutState();
+      calculateKeywordPositions();
+    }
   });
 
   themeSelect.style("position", "absolute");
@@ -356,18 +380,31 @@ function setupThemeSelector() {
   themeSelect.style("font-size", "12px");
   themeSelect.style("text-align", "center");
 
+  minFontSelect.style("position", "absolute");
+  minFontSelect.style("z-index", "10");
+  minFontSelect.style("width", `${minFontSelectWidth}px`);
+  minFontSelect.style("height", `${themeSelectHeight}px`);
+  minFontSelect.style("padding", "2px 6px");
+  minFontSelect.style("border-radius", "8px");
+  minFontSelect.style("border", "1px solid #BFC7D1");
+  minFontSelect.style("background", "#FFFFFFE8");
+  minFontSelect.style("font-size", "12px");
+  minFontSelect.style("text-align", "center");
+
   positionThemeSelector();
   updateLayoutState();
 }
 
 function positionThemeSelector() {
-  if (!themeSelect) {
+  if (!themeSelect || !minFontSelect) {
     return;
   }
 
-  const x = Math.round((windowWidth - themeSelectWidth) / 2);
+  const totalWidth = themeSelectWidth + controlGap + minFontSelectWidth;
+  const x = Math.round((windowWidth - totalWidth) / 2);
   const y = Math.round(windowHeight - themeSelectHeight - themeSelectBottomOffset);
   themeSelect.position(x, y);
+  minFontSelect.position(x + themeSelectWidth + controlGap, y);
 }
 
 function applyRetinaQuality() {
@@ -382,7 +419,8 @@ function updateLayoutState() {
 
   layoutState.margin = isVerySmallMobile ? 12 : margin;
   layoutState.padding = isVerySmallMobile ? 5 : isCompact ? 6 : padding;
-  layoutState.minFontSize = isVerySmallMobile ? 7 : minKeywordFontSize;
+  const responsiveMinFont = isVerySmallMobile ? 7 : minKeywordFontSize;
+  layoutState.minFontSize = Math.max(responsiveMinFont, userMinFontSize);
   layoutState.cornerRadius = isVerySmallMobile ? 7 : 10;
   layoutState.bottomSafeArea = themeSelect ? themeSelectHeight + themeSelectBottomOffset + 10 : 0;
 }
@@ -565,42 +603,173 @@ function clamp(value, min, max) {
 }
 
 function normalizeKeyword(keyword) {
-  return typeof keyword === "string" ? keyword.trim() : "";
+  if (typeof keyword !== "string") {
+    return "";
+  }
+
+  return keyword
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function fitKeywordText(keyword, fontSize, maxWidth) {
-  const ellipsis = "...";
-  const normalized = normalizeKeyword(keyword);
+function hardWrapByChars(text, maxChars) {
+  const lines = [];
+  for (let i = 0; i < text.length; i += maxChars) {
+    lines.push(text.slice(i, i + maxChars));
+  }
+  return lines;
+}
+
+function clipWithEllipsis(text, maxChars) {
+  if (text.length <= maxChars) {
+    return text;
+  }
+
+  if (maxChars <= 3) {
+    return text.slice(0, maxChars);
+  }
+
+  return `${text.slice(0, maxChars - 3)}...`;
+}
+
+function buildSingleLineText(text, maxChars) {
+  if (text.length <= maxChars) {
+    return { text, truncated: false };
+  }
+
+  return { text: clipWithEllipsis(text, maxChars), truncated: true };
+}
+
+function wrapTextByChars(text, maxChars) {
+  const normalized = normalizeKeyword(text);
   if (normalized === "") {
-    return "";
+    return [];
   }
 
-  textSize(fontSize);
-  if (textWidth(normalized) <= maxWidth) {
-    return normalized;
+  if (normalized.length <= maxChars) {
+    return [normalized];
   }
 
-  if (textWidth(ellipsis) > maxWidth) {
-    return "";
+  const words = normalized.split(" ");
+  if (words.length <= 1) {
+    return hardWrapByChars(normalized, maxChars);
   }
 
-  let low = 0;
-  let high = normalized.length;
-  let best = "";
+  const lines = [];
+  let current = "";
 
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const candidate = `${normalized.slice(0, mid)}${ellipsis}`;
+  for (const word of words) {
+    if (word.length > maxChars) {
+      if (current !== "") {
+        lines.push(current);
+        current = "";
+      }
+      lines.push(...hardWrapByChars(word, maxChars));
+      continue;
+    }
 
-    if (textWidth(candidate) <= maxWidth) {
-      best = candidate;
-      low = mid + 1;
+    const nextLine = current === "" ? word : `${current} ${word}`;
+    if (nextLine.length <= maxChars) {
+      current = nextLine;
     } else {
-      high = mid - 1;
+      if (current !== "") {
+        lines.push(current);
+      }
+      current = word;
     }
   }
 
-  return best;
+  if (current !== "") {
+    lines.push(current);
+  }
+
+  return lines;
+}
+
+function buildLongLines(text, maxChars, maxLines) {
+  const wrapped = wrapTextByChars(text, maxChars);
+  if (wrapped.length <= maxLines) {
+    return { lines: wrapped, truncated: false };
+  }
+
+  const lines = wrapped.slice(0, maxLines);
+  const remaining = wrapped.slice(maxLines).join(" ");
+  const mergedTail = `${lines[maxLines - 1]} ${remaining}`.trim();
+  lines[maxLines - 1] = clipWithEllipsis(mergedTail, maxChars);
+  return { lines, truncated: true };
+}
+
+function buildKeywordVisual(keyword, startFontSize, maxWidth, maxHeight) {
+  const normalized = normalizeKeyword(keyword);
+  if (normalized === "") {
+    return null;
+  }
+
+  if (maxWidth <= 0 || maxHeight <= 0) {
+    return null;
+  }
+
+  const useLongLayout = normalized.length > maxCharsPerLine;
+  let fontSize = clamp(startFontSize, layoutState.minFontSize, maxKeywordFontSize);
+  if (useLongLayout) {
+    fontSize = clamp(startFontSize * longKeywordFontScale, layoutState.minFontSize, maxKeywordFontSize);
+  }
+
+  while (fontSize >= layoutState.minFontSize) {
+    textSize(fontSize);
+
+    if (!useLongLayout) {
+      const lineHeight = fontSize * 1.22;
+      let line = normalized;
+      let isTruncated = false;
+      if (textWidth(line) > maxWidth) {
+        const avgCharWidth = Math.max(textWidth(line) / Math.max(line.length, 1), 1);
+        const charsByWidth = clamp(Math.floor(maxWidth / avgCharWidth), 4, maxCharsPerLine);
+        const clipped = buildSingleLineText(line, charsByWidth);
+        line = clipped.text;
+        isTruncated = clipped.truncated;
+      }
+
+      const contentWidth = textWidth(line);
+      const contentHeight = lineHeight;
+      if (contentWidth <= maxWidth && contentHeight <= maxHeight) {
+        return {
+          text: line,
+          lines: [line],
+          fontSize,
+          lineHeight,
+          contentWidth,
+          contentHeight,
+          isTruncated,
+        };
+      }
+    } else {
+      const avgCharWidth = Math.max(textWidth(normalized) / Math.max(normalized.length, 1), 1);
+      const charsByWidth = clamp(Math.floor(maxWidth / avgCharWidth), 6, maxCharsPerLine);
+      const longLines = buildLongLines(normalized, charsByWidth, longKeywordMaxLines);
+      const lines = longLines.lines;
+      const lineHeight = fontSize * 1.22;
+      const contentHeight = lines.length * lineHeight;
+      const contentWidth = lines.reduce((max, line) => Math.max(max, textWidth(line)), 0);
+
+      if (lines.length > 0 && contentWidth <= maxWidth && contentHeight <= maxHeight) {
+        return {
+          text: lines.join("\n"),
+          lines,
+          fontSize,
+          lineHeight,
+          contentWidth,
+          contentHeight,
+          isTruncated: longLines.truncated,
+        };
+      }
+    }
+
+    fontSize -= 0.5;
+  }
+
+  return null;
 }
 
 function validateQuadrantFontFactors() {
@@ -681,7 +850,7 @@ function tableLoaded(table) {
 
     // 데이터 추출
     let quadrantRaw = getCellString(row, columnMap.quadrant);
-    let keyword = getCellString(row, columnMap.keyword);
+    let keyword = normalizeKeyword(getCellString(row, columnMap.keyword));
     let quadrantNumber = Number.parseInt(quadrantRaw, 10);
 
     // 유효성 검사
@@ -803,7 +972,10 @@ function calculateKeywordPositions() {
     }
 
     // 평균 키워드 길이 계산
-    const totalKeywordLength = normalizedKeywords.reduce((sum, keyword) => sum + keyword.length, 0);
+    const totalKeywordLength = normalizedKeywords.reduce(
+      (sum, keyword) => sum + Math.min(keyword.length, avgLengthCapForSizing),
+      0
+    );
     const avgKeywordLength = Math.max(totalKeywordLength / normalizedKeywords.length, 1);
     const safeKeywordCount = Math.max(normalizedKeywords.length, 1);
 
@@ -897,21 +1069,26 @@ function tryLayoutWithFontSize(quadrant, startX, startY, endX, endY, fontSize) {
 
     // 키워드 길이에 따라 글자 크기 조정
     let adjustedFontSize = fontSize;
-    if (keyword.length > 15) adjustedFontSize *= 0.92;
-    if (keyword.length > 25) adjustedFontSize *= 0.88;
-    if (keyword.length > 40) adjustedFontSize *= 0.82;
+    if (keyword.length > 15) adjustedFontSize *= 0.97;
+    if (keyword.length > 30) adjustedFontSize *= 0.93;
+    if (keyword.length > 50) adjustedFontSize *= 0.89;
     adjustedFontSize = clamp(adjustedFontSize, layoutState.minFontSize, maxKeywordFontSize);
 
     const availableKeywordWidth = Math.max((endX - startX) * maxKeywordBoxWidthRatio - currentPadding * 2, 24);
-    const displayText = fitKeywordText(keyword, adjustedFontSize, availableKeywordWidth);
+    const availableKeywordHeight = Math.max(endY - startY - currentPadding * 2, layoutState.minFontSize * 1.25);
+    const visual = buildKeywordVisual(
+      keyword,
+      adjustedFontSize,
+      availableKeywordWidth,
+      availableKeywordHeight
+    );
 
-    if (displayText === "") {
+    if (!visual) {
       continue;
     }
 
-    textSize(adjustedFontSize);
-    const txtWidth = textWidth(displayText) + currentPadding * 2;
-    const txtHeight = adjustedFontSize * 1.8;
+    const txtWidth = visual.contentWidth + currentPadding * 2;
+    const txtHeight = visual.contentHeight + currentPadding * 2;
 
     // 현재 행의 최대 높이 갱신
     maxRowHeight = Math.max(maxRowHeight, txtHeight);
@@ -930,13 +1107,16 @@ function tryLayoutWithFontSize(quadrant, startX, startY, endX, endY, fontSize) {
 
     // 키워드 위치 정보 저장
     positions.push({
-      text: displayText,
+      text: visual.text,
       originalText: keyword,
       x: currentX + txtWidth / 2,
       y: currentY + txtHeight / 2,
       width: txtWidth,
       height: txtHeight,
-      fontSize: adjustedFontSize,
+      fontSize: visual.fontSize,
+      lineHeight: visual.lineHeight,
+      lineCount: visual.lines.length,
+      isTruncated: visual.isTruncated,
     });
 
     // 다음 키워드 위치
@@ -993,26 +1173,30 @@ function createGridLayout(quadrant, startX, startY, width, height) {
 
     // 키워드 길이에 따라 글자 크기 조정
     let fontSize = baseFontSize;
-    if (keyword.length > 15) fontSize *= 0.92;
-    if (keyword.length > 25) fontSize *= 0.88;
-    if (keyword.length > 40) fontSize *= 0.82;
+    if (keyword.length > 15) fontSize *= 0.97;
+    if (keyword.length > 30) fontSize *= 0.93;
+    if (keyword.length > 50) fontSize *= 0.89;
     fontSize = clamp(fontSize, layoutState.minFontSize, maxKeywordFontSize);
 
     const maxTextWidth = Math.max(cellWidth - currentPadding * 2, 24);
-    const displayText = fitKeywordText(keyword, fontSize, maxTextWidth);
+    const maxTextHeight = Math.max(cellHeight - currentPadding * 2, layoutState.minFontSize * 1.25);
+    const visual = buildKeywordVisual(keyword, fontSize, maxTextWidth, maxTextHeight);
 
-    if (displayText === "") {
+    if (!visual) {
       continue;
     }
 
     positions.push({
-      text: displayText,
+      text: visual.text,
       originalText: keyword,
       x: x,
       y: y,
-      width: cellWidth - currentPadding * 2,
-      height: cellHeight - currentPadding * 2,
-      fontSize: fontSize,
+      width: visual.contentWidth + currentPadding * 2,
+      height: visual.contentHeight + currentPadding * 2,
+      fontSize: visual.fontSize,
+      lineHeight: visual.lineHeight,
+      lineCount: visual.lines.length,
+      isTruncated: visual.isTruncated,
     });
   }
 
@@ -1078,8 +1262,92 @@ function optimizeLayout(quadrant, startX, startY, width, height) {
       kw.width *= scale;
       kw.height *= scale;
       kw.fontSize *= scale;
+      if (kw.lineHeight) {
+        kw.lineHeight *= scale;
+      }
     }
   }
+}
+
+function getHoveredKeyword() {
+  for (let q = 0; q < 4; q++) {
+    for (let i = keywordPositions[q].length - 1; i >= 0; i--) {
+      const kw = keywordPositions[q][i];
+
+      const left = kw.x - kw.width / 2;
+      const right = kw.x + kw.width / 2;
+      const top = kw.y - kw.height / 2;
+      const bottom = kw.y + kw.height / 2;
+
+      if (mouseX >= left && mouseX <= right && mouseY >= top && mouseY <= bottom) {
+        return kw;
+      }
+    }
+  }
+
+  return null;
+}
+
+function drawKeywordTooltip(keyword, theme) {
+  const tooltipPadding = 20;
+  const tooltipMaxWidth = Math.min(width * 0.52, 420);
+  const tooltipLineChars = 17;
+  const tooltipMinChars = 6;
+
+  const maxTextWidth = tooltipMaxWidth - tooltipPadding * 2;
+  let lineChars = tooltipLineChars;
+  let lines = wrapTextByChars(keyword.originalText, lineChars);
+
+  textSize(32);
+  while (lines.length > 0 && lineChars > tooltipMinChars) {
+    const lineWidth = lines.reduce((max, line) => Math.max(max, textWidth(line)), 0);
+    if (lineWidth <= maxTextWidth) {
+      break;
+    }
+    lineChars -= 1;
+    lines = wrapTextByChars(keyword.originalText, lineChars);
+  }
+
+  if (lines.length === 0) {
+    return;
+  }
+
+  push();
+  textAlign(LEFT, TOP);
+  textSize(32);
+  textLeading(40);
+
+  const contentWidth = lines.reduce((max, line) => Math.max(max, textWidth(line)), 0);
+  const contentHeight = lines.length * 40 + 4;
+  const boxWidth = Math.min(contentWidth + tooltipPadding * 2, tooltipMaxWidth);
+  const boxHeight = contentHeight + tooltipPadding * 2;
+
+  let boxX = mouseX + 14;
+  let boxY = mouseY + 14;
+
+  if (boxX + boxWidth > width - 8) {
+    boxX = mouseX - boxWidth - 14;
+  }
+  if (boxY + boxHeight > getUsableCanvasHeight() - 8) {
+    boxY = mouseY - boxHeight - 14;
+  }
+  boxX = clamp(boxX, 8, width - boxWidth - 8);
+  boxY = clamp(boxY, 8, getUsableCanvasHeight() - boxHeight - 8);
+
+  fill(color(theme.overlayBg + "F2"));
+  stroke(theme.divider);
+  strokeWeight(2.4);
+  rect(boxX, boxY, boxWidth, boxHeight, 8);
+
+  noFill();
+  stroke(theme.marker);
+  strokeWeight(1.2);
+  rect(boxX + 2, boxY + 2, boxWidth - 4, boxHeight - 4, 6);
+
+  noStroke();
+  fill(theme.marker);
+  text(lines.join("\n"), boxX + tooltipPadding, boxY + tooltipPadding);
+  pop();
 }
 
 function draw() {
@@ -1142,6 +1410,9 @@ function draw() {
       // 텍스트 그리기
       fill(textColor);
       textSize(kw.fontSize);
+      if (kw.lineHeight) {
+        textLeading(kw.lineHeight);
+      }
       text(kw.text, kw.x, kw.y);
     }
   }
@@ -1159,6 +1430,14 @@ function draw() {
   if (!hasAnyKeywordData()) {
     const detail = appState.infoMessage || "표시할 키워드가 없습니다.";
     drawOverlayMessage("데이터 없음", detail);
+  }
+
+  const hoveredKeyword = getHoveredKeyword();
+  if (hoveredKeyword) {
+    cursor(HAND);
+    drawKeywordTooltip(hoveredKeyword, theme);
+  } else {
+    cursor(ARROW);
   }
 }
 

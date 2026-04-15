@@ -1,0 +1,26 @@
+# DEV LOG
+
+## 운영 규칙
+- 작업 진행 중 공유한 "다음 작업 리스트"는 이 문서에 계속 누적 업데이트한다.
+- 완료된 항목은 `[x]`, 진행 예정 항목은 `[ ]`로 관리한다.
+- 사용자가 `[보류]`를 붙인 항목은 그대로 유지한다.
+
+## 2026-04-15
+
+### 완료
+- [x] 데이터 로드 실패 시 에러 메시지 및 대체 UI 오버레이 추가 (`tableLoadFailed`, `drawOverlayMessage`)
+- [x] CSV 컬럼명 불일치 시 헤더 후보명 + 컬럼 인덱스 fallback 처리 (`resolveColumn`)
+- [x] `발표번호` 비정상 값 무시 및 집계 로깅 (`invalidQuadrant`)
+- [x] `키워드나 질문` 공백/`null`/`undefined` 필터링 규칙 적용 (`isValidKeyword`)
+- [x] CSV 0행/유효 데이터 0건 시 안내 메시지 표시
+- [x] `PROJECT_PLAN.md`의 1) 데이터 로딩/파싱 안정성 체크리스트 완료 처리
+- [x] 테마 팔레트 4종(Modern/Minimal/Astral/Kitsch) 추가 및 테마 선택 UI 드롭다운 구현
+- [x] `T` 키로 테마 순환 전환 지원
+- [x] 사분면/배경/구분선/안내 오버레이 색상을 활성 테마 기반으로 렌더링하도록 변경
+- [x] 테마 드롭다운 크기 축소 및 중앙 하단 배치로 화면 가림 최소화
+- [x] Minimal 테마 대비 상향(배경/구분선/텍스트 명도 차 확대)으로 시인성 개선
+
+### 다음 작업 리스트
+- [ ] `calculateKeywordPositions()`에서 `keywordCount === 0`일 때 0으로 나누기 방지
+- [ ] 평균 키워드 길이 계산 시 `NaN`/`Infinity` 방지
+- [ ] `optimizeLayout()`에서 `currentWidth`/`currentHeight`가 0인 경우 스케일 계산 방어 코드 추가

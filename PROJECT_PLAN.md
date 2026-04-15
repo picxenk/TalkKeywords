@@ -10,11 +10,11 @@
 - [x] CSV 행 수가 0일 때(빈 시트) 화면이 깨지지 않도록 안내 텍스트 표시
 
 ### 2) 레이아웃 계산 안전성
-- [ ] `calculateKeywordPositions()`에서 `keywordCount === 0`일 때 0으로 나누기 방지
-- [ ] 평균 키워드 길이 계산 시 `NaN`/`Infinity` 방지(빈 배열, 비문자 데이터)
-- [ ] `optimizeLayout()`에서 `currentWidth`/`currentHeight`가 0인 경우 스케일 계산 방어 코드 추가
-- [ ] 초장문 키워드(매우 긴 문장) 처리 정책(줄바꿈/말줄임/최소 폰트 제한) 확정
-- [ ] 사분면별 폰트 계수(`quadrantFontFactors`)가 과도한 오버플로우를 유발하지 않는지 경계값 테스트
+- [x] `calculateKeywordPositions()`에서 `keywordCount === 0`일 때 0으로 나누기 방지
+- [x] 평균 키워드 길이 계산 시 `NaN`/`Infinity` 방지(빈 배열, 비문자 데이터)
+- [x] `optimizeLayout()`에서 `currentWidth`/`currentHeight`가 0인 경우 스케일 계산 방어 코드 추가
+- [x] 초장문 키워드(매우 긴 문장) 처리 정책(줄바꿈/말줄임/최소 폰트 제한) 확정
+- [x] 사분면별 폰트 계수(`quadrantFontFactors`)가 과도한 오버플로우를 유발하지 않는지 경계값 테스트
 
 ### 3) 렌더링/반응형 동작
 - [ ] 매우 작은 화면(모바일 세로)에서 텍스트 겹침/박스 잘림 여부 점검

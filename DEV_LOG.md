@@ -19,8 +19,15 @@
 - [x] 사분면/배경/구분선/안내 오버레이 색상을 활성 테마 기반으로 렌더링하도록 변경
 - [x] 테마 드롭다운 크기 축소 및 중앙 하단 배치로 화면 가림 최소화
 - [x] Minimal 테마 대비 상향(배경/구분선/텍스트 명도 차 확대)으로 시인성 개선
+- [x] `calculateKeywordPositions()`의 0건 데이터 분기 추가로 0 나눗셈 방지
+- [x] 평균 길이/기본 폰트 계산의 `NaN`/`Infinity` 방어 로직 추가
+- [x] `optimizeLayout()`의 0 폭/높이 및 비정상 스케일 방어 코드 추가
+- [x] 초장문 키워드 처리 정책 적용(최소 폰트 보장 + 말줄임 처리)
+- [x] 사분면 폰트 계수 경계값 검증 경고 로직 추가(`validateQuadrantFontFactors`)
+- [x] CSV 로드 성공 시 키워드 위치 재계산 누락 보완
+- [x] `tableLoaded()`가 `setup()`보다 먼저 호출될 때 발생하던 `textSize` 오류 방지(캔버스 준비 상태 가드)
 
 ### 다음 작업 리스트
-- [ ] `calculateKeywordPositions()`에서 `keywordCount === 0`일 때 0으로 나누기 방지
-- [ ] 평균 키워드 길이 계산 시 `NaN`/`Infinity` 방지
-- [ ] `optimizeLayout()`에서 `currentWidth`/`currentHeight`가 0인 경우 스케일 계산 방어 코드 추가
+- [ ] 매우 작은 화면(모바일 세로)에서 텍스트 겹침/박스 잘림 여부 점검
+- [ ] `windowResized()` 연속 호출 시 성능 저하 방지를 위한 디바운스 적용 검토
+- [ ] 고해상도(레티나) 환경 텍스트/박스 품질 점검

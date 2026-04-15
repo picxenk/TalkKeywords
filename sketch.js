@@ -196,6 +196,8 @@ const appState = {
   infoMessage: "",
   stats: null,
   columnMap: null,
+  hasCanvas: false,
+  needsLayoutRecalc: false,
 };
 
 const expectedColumns = {
@@ -271,12 +273,16 @@ const themeSelectBottomOffset = 14;
 
 const margin = 20; // 화면 가장자리와 키워드 사이 여백
 const padding = 8; // 키워드 사이 여백 (약간 줄임)
+const minKeywordFontSize = 8;
+const maxKeywordFontSize = 72;
+const maxKeywordBoxWidthRatio = 0.9;
 
 // 키워드 위치 저장용 변수
 let keywordPositions = [[], [], [], []];
 
 // 사분면별 초기 글자 크기 계수
 const quadrantFontFactors = [1.5, 1.6, 1.0, 1.5]; // 2, 4사분면에 더 큰 글자 크기 적용, 뭐가 문제지?
+const recommendedFontFactorRange = { min: 0.7, max: 2.0 };
 
 function preload() {
   // CSV 파일로 게시된 구글 시트 데이터 로드
@@ -287,11 +293,14 @@ function preload() {
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
+  appState.hasCanvas = true;
   textAlign(CENTER, CENTER);
   setupThemeSelector();
+  validateQuadrantFontFactors();
 
   // 키워드 위치 초기화
   calculateKeywordPositions();
+  appState.needsLayoutRecalc = false;
 
   if (testData) {
     const testDataCount = quadrantData.reduce((sum, quadrant) => sum + quadrant.length, 0);
@@ -392,6 +401,68 @@ function hasAnyKeywordData() {
   return quadrantData.some((quadrant) => quadrant.length > 0);
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeKeyword(keyword) {
+  return typeof keyword === "string" ? keyword.trim() : "";
+}
+
+function fitKeywordText(keyword, fontSize, maxWidth) {
+  const ellipsis = "...";
+  const normalized = normalizeKeyword(keyword);
+  if (normalized === "") {
+    return "";
+  }
+
+  textSize(fontSize);
+  if (textWidth(normalized) <= maxWidth) {
+    return normalized;
+  }
+
+  if (textWidth(ellipsis) > maxWidth) {
+    return "";
+  }
+
+  let low = 0;
+  let high = normalized.length;
+  let best = "";
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const candidate = `${normalized.slice(0, mid)}${ellipsis}`;
+
+    if (textWidth(candidate) <= maxWidth) {
+      best = candidate;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return best;
+}
+
+function validateQuadrantFontFactors() {
+  const invalidIndexes = [];
+
+  for (let i = 0; i < quadrantFontFactors.length; i++) {
+    const factor = quadrantFontFactors[i];
+    if (factor < recommendedFontFactorRange.min || factor > recommendedFontFactorRange.max) {
+      invalidIndexes.push(`${i + 1}사분면:${factor}`);
+    }
+  }
+
+  if (invalidIndexes.length > 0) {
+    console.warn(
+      "사분면 폰트 계수가 권장 범위를 벗어났습니다",
+      invalidIndexes.join(", "),
+      `권장 범위 ${recommendedFontFactorRange.min}~${recommendedFontFactorRange.max}`
+    );
+  }
+}
+
 function tableLoadFailed(error) {
   resetQuadrantData();
   appState.isLoading = false;
@@ -403,6 +474,13 @@ function tableLoadFailed(error) {
     invalidQuadrant: 0,
     invalidKeyword: 0,
   };
+
+  if (appState.hasCanvas) {
+    calculateKeywordPositions();
+  } else {
+    appState.needsLayoutRecalc = true;
+  }
+
   console.error("데이터 로드 실패", error);
 }
 
@@ -480,6 +558,11 @@ function tableLoaded(table) {
   }
 
   console.log("데이터 로드 완료", stats);
+  if (appState.hasCanvas) {
+    calculateKeywordPositions();
+  } else {
+    appState.needsLayoutRecalc = true;
+  }
 }
 
 function drawOverlayMessage(title, detail, isError = false) {
@@ -548,17 +631,41 @@ function calculateKeywordPositions() {
     // 키워드 수
     const keywordCount = quadrantData[q].length;
 
+    if (keywordCount === 0) {
+      keywordPositions[q] = [];
+      continue;
+    }
+
+    const normalizedKeywords = quadrantData[q]
+      .map((keyword) => normalizeKeyword(keyword))
+      .filter((keyword) => keyword !== "");
+
+    if (normalizedKeywords.length === 0) {
+      keywordPositions[q] = [];
+      continue;
+    }
+
     // 평균 키워드 길이 계산
-    const avgKeywordLength =
-      quadrantData[q].reduce((sum, kw) => sum + kw.length, 0) / keywordCount;
+    const totalKeywordLength = normalizedKeywords.reduce((sum, keyword) => sum + keyword.length, 0);
+    const avgKeywordLength = Math.max(totalKeywordLength / normalizedKeywords.length, 1);
+    const safeKeywordCount = Math.max(normalizedKeywords.length, 1);
 
     // 사분면별 기본 글자 크기 계산
     // 면적, 키워드 수, 평균 길이 고려하여 계산
-    const baseFontSize =
-      Math.sqrt(quadArea / keywordCount) / (avgKeywordLength * 0.5);
+    let baseFontSize =
+      Math.sqrt(quadArea / safeKeywordCount) / (avgKeywordLength * 0.5);
+
+    if (!Number.isFinite(baseFontSize) || baseFontSize <= 0) {
+      baseFontSize = 14;
+    }
 
     // 2, 4사분면의 경우 글자 크기를 더 크게 설정 (계수 적용)
-    const adjustedBaseFontSize = baseFontSize * quadrantFontFactors[q];
+    const safeFactor = clamp(
+      quadrantFontFactors[q],
+      recommendedFontFactorRange.min,
+      recommendedFontFactorRange.max
+    );
+    const adjustedBaseFontSize = baseFontSize * safeFactor;
 
     // 글자 크기 시도 범위 (큰 것부터 작은 것까지)
     const fontSizes = [
@@ -574,7 +681,11 @@ function calculateKeywordPositions() {
 
     for (const fontSize of fontSizes) {
       // 최소 글자 크기 적용
-      const currentFontSize = Math.max(fontSize, 8);
+      const currentFontSize = clamp(fontSize, minKeywordFontSize, maxKeywordFontSize);
+
+      if (!Number.isFinite(currentFontSize)) {
+        continue;
+      }
 
       // 이 폰트 크기로 배치 시도
       const result = tryLayoutWithFontSize(
@@ -620,15 +731,28 @@ function tryLayoutWithFontSize(quadrant, startX, startY, endX, endY, fontSize) {
   let maxRowHeight = rowHeight; // 현재 행의 최대 높이
 
   for (let i = 0; i < keywords.length; i++) {
-    const keyword = keywords[i];
+    const keyword = normalizeKeyword(keywords[i]);
+
+    if (keyword === "") {
+      continue;
+    }
 
     // 키워드 길이에 따라 글자 크기 조정
     let adjustedFontSize = fontSize;
-    if (keyword.length > 15) adjustedFontSize *= 0.95;
-    if (keyword.length > 25) adjustedFontSize *= 0.95;
+    if (keyword.length > 15) adjustedFontSize *= 0.92;
+    if (keyword.length > 25) adjustedFontSize *= 0.88;
+    if (keyword.length > 40) adjustedFontSize *= 0.82;
+    adjustedFontSize = clamp(adjustedFontSize, minKeywordFontSize, maxKeywordFontSize);
+
+    const availableKeywordWidth = Math.max((endX - startX) * maxKeywordBoxWidthRatio - padding * 2, 24);
+    const displayText = fitKeywordText(keyword, adjustedFontSize, availableKeywordWidth);
+
+    if (displayText === "") {
+      continue;
+    }
 
     textSize(adjustedFontSize);
-    const txtWidth = textWidth(keyword) + padding * 2;
+    const txtWidth = textWidth(displayText) + padding * 2;
     const txtHeight = adjustedFontSize * 1.8;
 
     // 현재 행의 최대 높이 갱신
@@ -648,7 +772,8 @@ function tryLayoutWithFontSize(quadrant, startX, startY, endX, endY, fontSize) {
 
     // 키워드 위치 정보 저장
     positions.push({
-      text: keyword,
+      text: displayText,
+      originalText: keyword,
       x: currentX + txtWidth / 2,
       y: currentY + txtHeight / 2,
       width: txtWidth,
@@ -668,22 +793,39 @@ function createGridLayout(quadrant, startX, startY, width, height) {
   const keywords = quadrantData[quadrant];
   const totalKeywords = keywords.length;
 
+   if (totalKeywords === 0) {
+    return [];
+  }
+
+  const safeWidth = Math.max(width, 1);
+  const safeHeight = Math.max(height, 1);
+
   // 가로세로 비율에 맞게 격자 구성
-  const ratio = width / height;
-  const cols = Math.ceil(Math.sqrt(totalKeywords * ratio));
+  const ratio = safeWidth / safeHeight;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(totalKeywords * ratio)));
   const rows = Math.ceil(totalKeywords / cols);
 
-  const cellWidth = width / cols;
-  const cellHeight = height / rows;
+  const cellWidth = safeWidth / cols;
+  const cellHeight = safeHeight / rows;
 
   // 격자에 맞는 글자 크기 계산 (2, 4사분면은 더 크게)
   const cellSize = Math.min(cellWidth, cellHeight);
-  const baseFontSize = cellSize * 0.4 * quadrantFontFactors[quadrant];
+  const safeFactor = clamp(
+    quadrantFontFactors[quadrant],
+    recommendedFontFactorRange.min,
+    recommendedFontFactorRange.max
+  );
+  const baseFontSize = clamp(cellSize * 0.4 * safeFactor, minKeywordFontSize, maxKeywordFontSize);
 
   const positions = [];
 
   for (let i = 0; i < totalKeywords; i++) {
-    const keyword = keywords[i];
+    const keyword = normalizeKeyword(keywords[i]);
+
+    if (keyword === "") {
+      continue;
+    }
+
     const row = Math.floor(i / cols);
     const col = i % cols;
 
@@ -692,16 +834,26 @@ function createGridLayout(quadrant, startX, startY, width, height) {
 
     // 키워드 길이에 따라 글자 크기 조정
     let fontSize = baseFontSize;
-    if (keyword.length > 15) fontSize *= 0.95;
-    if (keyword.length > 25) fontSize *= 0.9;
+    if (keyword.length > 15) fontSize *= 0.92;
+    if (keyword.length > 25) fontSize *= 0.88;
+    if (keyword.length > 40) fontSize *= 0.82;
+    fontSize = clamp(fontSize, minKeywordFontSize, maxKeywordFontSize);
+
+    const maxTextWidth = Math.max(cellWidth - padding * 2, 24);
+    const displayText = fitKeywordText(keyword, fontSize, maxTextWidth);
+
+    if (displayText === "") {
+      continue;
+    }
 
     positions.push({
-      text: keyword,
+      text: displayText,
+      originalText: keyword,
       x: x,
       y: y,
       width: cellWidth - padding * 2,
       height: cellHeight - padding * 2,
-      fontSize: Math.max(fontSize, 8), // 최소 글자 크기 8px
+      fontSize: fontSize,
     });
   }
 
@@ -711,6 +863,10 @@ function createGridLayout(quadrant, startX, startY, width, height) {
 // 레이아웃 최적화 - 사분면 공간을 최대한 활용하도록 스케일링
 function optimizeLayout(quadrant, startX, startY, width, height) {
   if (keywordPositions[quadrant].length === 0) return;
+
+  if (width <= padding * 2 || height <= padding * 2) {
+    return;
+  }
 
   // 현재 레이아웃의 바운딩 박스 계산
   let minX = Infinity,
@@ -729,9 +885,17 @@ function optimizeLayout(quadrant, startX, startY, width, height) {
   const currentWidth = maxX - minX;
   const currentHeight = maxY - minY;
 
+  if (currentWidth <= 0 || currentHeight <= 0) {
+    return;
+  }
+
   // 사용 가능한 공간과 비교하여 스케일 계산
   const scaleX = (width - padding * 2) / currentWidth;
   const scaleY = (height - padding * 2) / currentHeight;
+
+  if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
+    return;
+  }
 
   // 종횡비 유지를 위해 작은 스케일 선택
   const scale = Math.min(scaleX, scaleY);

@@ -263,9 +263,65 @@ const themePalettes = {
       { bg: "#D1FF3F", text: "#243007" },
     ],
   },
+  artistic: {
+    label: "Artistic",
+    canvasBg: "#F3EEE7",
+    divider: "#6B5A47",
+    marker: "#5E503F",
+    overlayBg: "#FFFDF9",
+    overlayBorder: "#B9A590",
+    quadrants: [
+      { bg: "#E6C3A5", text: "#3A2416" },
+      { bg: "#C7D6B5", text: "#22301A" },
+      { bg: "#B9CCD9", text: "#1D2D3A" },
+      { bg: "#D8BFD5", text: "#352338" },
+    ],
+  },
+  spring: {
+    label: "Spring",
+    canvasBg: "#F7FBF2",
+    divider: "#6E8A55",
+    marker: "#5E7A48",
+    overlayBg: "#FFFFFF",
+    overlayBorder: "#BDD5A8",
+    quadrants: [
+      { bg: "#CFECC4", text: "#1E3A1A" },
+      { bg: "#FFE4B8", text: "#3A2912" },
+      { bg: "#FFD3D3", text: "#3D1E1E" },
+      { bg: "#C9E7F4", text: "#173443" },
+    ],
+  },
+  neon: {
+    label: "Neon",
+    canvasBg: "#111216",
+    divider: "#3EF3C7",
+    marker: "#A7FF3C",
+    overlayBg: "#1A1C22",
+    overlayBorder: "#2FE8C0",
+    quadrants: [
+      { bg: "#00E5FF", text: "#012227" },
+      { bg: "#FF3D9A", text: "#2D0319" },
+      { bg: "#39FF14", text: "#0B2A05" },
+      { bg: "#FFC400", text: "#3A2A00" },
+    ],
+  },
+  whiskey: {
+    label: "Whiskey",
+    canvasBg: "#1C1511",
+    divider: "#9C6B2F",
+    marker: "#C58A3E",
+    overlayBg: "#2A1F18",
+    overlayBorder: "#8C673D",
+    quadrants: [
+      { bg: "#6F4A2B", text: "#FCE7CF" },
+      { bg: "#8A5A32", text: "#F9E3C7" },
+      { bg: "#A66A36", text: "#FFF2DE" },
+      { bg: "#4F3A2A", text: "#F2E2CE" },
+    ],
+  },
 };
 
-let currentThemeKey = "modern";
+let currentThemeKey = "kitsch";
 let themeSelect = null;
 let minFontSelect = null;
 let focusedQuadrant = null;

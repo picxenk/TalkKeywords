@@ -267,6 +267,8 @@ const themePalettes = {
 
 let currentThemeKey = "modern";
 let themeSelect = null;
+let focusedQuadrant = null;
+let globalHotkeysBound = false;
 const themeSelectWidth = 112;
 const themeSelectHeight = 30;
 const themeSelectBottomOffset = 14;
@@ -306,6 +308,7 @@ function setup() {
   applyRetinaQuality();
   textAlign(CENTER, CENTER);
   setupThemeSelector();
+  bindGlobalHotkeys();
   updateLayoutState();
   validateQuadrantFontFactors();
 
@@ -386,6 +389,129 @@ function updateLayoutState() {
 
 function getUsableCanvasHeight() {
   return Math.max(height - layoutState.bottomSafeArea, 120);
+}
+
+function applyQuadrantFocusFromKey(rawKey) {
+  if (rawKey === null || rawKey === undefined) {
+    return false;
+  }
+
+  const keyValue = String(rawKey);
+
+  if (keyValue === "0") {
+    focusedQuadrant = null;
+    calculateKeywordPositions();
+    return true;
+  }
+
+  if (keyValue === "1" || keyValue === "2" || keyValue === "3" || keyValue === "4") {
+    focusedQuadrant = Number.parseInt(keyValue, 10) - 1;
+    calculateKeywordPositions();
+    return true;
+  }
+
+  return false;
+}
+
+function applyQuadrantFocusFromInput(rawKey, rawCode, rawKeyCode) {
+  if (applyQuadrantFocusFromKey(rawKey)) {
+    return true;
+  }
+
+  const codeValue = rawCode === null || rawCode === undefined ? "" : String(rawCode);
+  if (codeValue === "Digit0" || codeValue === "Numpad0") {
+    return applyQuadrantFocusFromKey("0");
+  }
+  if (codeValue === "Digit1" || codeValue === "Numpad1") {
+    return applyQuadrantFocusFromKey("1");
+  }
+  if (codeValue === "Digit2" || codeValue === "Numpad2") {
+    return applyQuadrantFocusFromKey("2");
+  }
+  if (codeValue === "Digit3" || codeValue === "Numpad3") {
+    return applyQuadrantFocusFromKey("3");
+  }
+  if (codeValue === "Digit4" || codeValue === "Numpad4") {
+    return applyQuadrantFocusFromKey("4");
+  }
+
+  if (rawKeyCode === 48 || rawKeyCode === 96) {
+    return applyQuadrantFocusFromKey("0");
+  }
+  if (rawKeyCode === 49 || rawKeyCode === 97) {
+    return applyQuadrantFocusFromKey("1");
+  }
+  if (rawKeyCode === 50 || rawKeyCode === 98) {
+    return applyQuadrantFocusFromKey("2");
+  }
+  if (rawKeyCode === 51 || rawKeyCode === 99) {
+    return applyQuadrantFocusFromKey("3");
+  }
+  if (rawKeyCode === 52 || rawKeyCode === 100) {
+    return applyQuadrantFocusFromKey("4");
+  }
+
+  return false;
+}
+
+function bindGlobalHotkeys() {
+  if (globalHotkeysBound) {
+    return;
+  }
+
+  window.addEventListener("keydown", (event) => {
+    const isFocusHotkey = applyQuadrantFocusFromInput(event.key, event.code, event.keyCode);
+
+    if (event.repeat) {
+      return;
+    }
+
+    if (isFocusHotkey) {
+      event.preventDefault();
+      return;
+    }
+
+    if (event.key === "Escape" && focusedQuadrant !== null) {
+      focusedQuadrant = null;
+      calculateKeywordPositions();
+      event.preventDefault();
+    }
+  }, true);
+
+  globalHotkeysBound = true;
+}
+
+function getQuadrantBounds(quadrant, currentMargin, midX, midY, usableHeight) {
+  switch (quadrant) {
+    case 0:
+      return {
+        startX: currentMargin,
+        endX: midX - currentMargin,
+        startY: currentMargin,
+        endY: midY - currentMargin,
+      };
+    case 1:
+      return {
+        startX: midX + currentMargin,
+        endX: width - currentMargin,
+        startY: currentMargin,
+        endY: midY - currentMargin,
+      };
+    case 2:
+      return {
+        startX: currentMargin,
+        endX: midX - currentMargin,
+        startY: midY + currentMargin,
+        endY: usableHeight - currentMargin,
+      };
+    default:
+      return {
+        startX: midX + currentMargin,
+        endX: width - currentMargin,
+        startY: midY + currentMargin,
+        endY: usableHeight - currentMargin,
+      };
+  }
 }
 
 function resetQuadrantData() {
@@ -633,34 +759,25 @@ function calculateKeywordPositions() {
 
   // 각 사분면별로 키워드 배치
   for (let q = 0; q < 4; q++) {
+    if (focusedQuadrant !== null && focusedQuadrant !== q) {
+      keywordPositions[q] = [];
+      continue;
+    }
+
     // 사분면 영역 계산
     let startX, endX, startY, endY;
 
-    switch (q) {
-      case 0: // 1사분면 (좌상단)
-        startX = currentMargin;
-        endX = midX - currentMargin;
-        startY = currentMargin;
-        endY = midY - currentMargin;
-        break;
-      case 1: // 2사분면 (우상단)
-        startX = midX + currentMargin;
-        endX = width - currentMargin;
-        startY = currentMargin;
-        endY = midY - currentMargin;
-        break;
-      case 2: // 3사분면 (좌하단)
-        startX = currentMargin;
-        endX = midX - currentMargin;
-        startY = midY + currentMargin;
-        endY = usableHeight - currentMargin;
-        break;
-      case 3: // 4사분면 (우하단)
-        startX = midX + currentMargin;
-        endX = width - currentMargin;
-        startY = midY + currentMargin;
-        endY = usableHeight - currentMargin;
-        break;
+    if (focusedQuadrant === q) {
+      startX = currentMargin;
+      endX = width - currentMargin;
+      startY = currentMargin;
+      endY = usableHeight - currentMargin;
+    } else {
+      const bounds = getQuadrantBounds(q, currentMargin, midX, midY, usableHeight);
+      startX = bounds.startX;
+      endX = bounds.endX;
+      startY = bounds.startY;
+      endY = bounds.endY;
     }
 
     // 사분면 크기 계산
@@ -973,22 +1090,38 @@ function draw() {
   // 배경을 그려서 이전 그림을 지움
   background(theme.canvasBg);
 
-  // 사분면 구분선 그리기
-  stroke(theme.divider);
-  strokeWeight(2);
-  line(width / 2, 0, width / 2, usableHeight);
-  line(0, midY, width, midY);
-  
-  // 사분면 숫자 쓰기
-  let nSize = 20;
-  let gap = nSize*0.7;
-  textSize(nSize);
+  if (focusedQuadrant === null) {
+    // 사분면 구분선 그리기
+    stroke(theme.divider);
+    strokeWeight(2);
+    line(width / 2, 0, width / 2, usableHeight);
+    line(0, midY, width, midY);
+
+    // 사분면 숫자 쓰기
+    let nSize = 20;
+    let gap = nSize * 0.7;
+    textSize(nSize);
+    fill(theme.marker);
+    noStroke();
+    text("1", width / 2 - gap, midY - gap);
+    text("2", width / 2 + gap, midY - gap);
+    text("3", width / 2 - gap, midY + gap);
+    text("4", width / 2 + gap, midY + gap);
+  }
+
+  push();
+  textAlign(LEFT, BOTTOM);
+  textSize(11);
   fill(theme.marker);
   noStroke();
-  text("1", width/2-gap, midY-gap);
-  text("2", width/2+gap, midY-gap);
-  text("3", width/2-gap, midY+gap);
-  text("4", width/2+gap, midY+gap);
+  const helpX = 12;
+  const helpY = getUsableCanvasHeight() - 6;
+  if (focusedQuadrant === null) {
+    text("focus: 1-4 / reset: 0", helpX, helpY);
+  } else {
+    text(`focus: ${focusedQuadrant + 1} / reset: 0 or Esc`, helpX, helpY);
+  }
+  pop();
 
   noStroke();
 
@@ -1047,6 +1180,10 @@ function windowResized() {
 }
 
 function keyPressed() {
+  if (applyQuadrantFocusFromInput(key, null, keyCode)) {
+    return;
+  }
+
   if (key !== "t" && key !== "T") {
     return;
   }

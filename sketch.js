@@ -1473,6 +1473,25 @@ function draw() {
     }
   }
 
+  if (focusedQuadrant !== null) {
+    push();
+    const badgeX = 12;
+    const badgeY = 10;
+    const badgeW = 48;
+    const badgeH = 52;
+    fill(color(theme.overlayBg + "E8"));
+    stroke(theme.divider);
+    strokeWeight(2);
+    rect(badgeX, badgeY, badgeW, badgeH, 8);
+
+    noStroke();
+    fill(theme.marker);
+    textAlign(CENTER, CENTER);
+    textSize(40);
+    text(String(focusedQuadrant + 1), badgeX + badgeW / 2, badgeY + badgeH / 2 + 1);
+    pop();
+  }
+
   if (appState.isLoading) {
     drawOverlayMessage("데이터 불러오는 중...", "구글 시트에서 키워드 데이터를 읽고 있습니다.");
     return;
